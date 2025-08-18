@@ -51,28 +51,6 @@ class AWSIoTConnection:
             self.logger.error(f"Error initializing AWS IoT client: {e}")
             raise
 
-    def test_connection(self) -> bool:
-        """
-        Test the AWS IoT Core connection
-
-        Returns:
-            bool: True if connection successful, False otherwise
-        """
-        try:
-            # Test connection by attempting to publish to a test topic
-            test_payload = {"test": "connection"}
-            test_topic = f"soil-moisture/{self.thing_name}/test"
-
-            self.iot_client.publish(
-                topic=test_topic, qos=0, payload=json.dumps(test_payload)
-            )
-
-            self.logger.info("AWS IoT Core connection test successful")
-            return True
-        except Exception as e:
-            self.logger.error(f"AWS IoT Core connection test failed: {e}")
-            return False
-
     def send_sensor_data(self, sensor_data: Dict) -> bool:
         """
         Send sensor data to AWS IoT Core
@@ -113,17 +91,3 @@ class AWSIoTConnection:
         except Exception as e:
             self.logger.error(f"Failed to send sensor data: {e}")
             return False
-
-    def get_status(self) -> Dict:
-        """
-        Get connection status and configuration info
-
-        Returns:
-            dict: Status information
-        """
-        return {
-            "region": self.region_name,
-            "thing_name": self.thing_name,
-            "connected": self.test_connection(),
-            "topic": f"soil-moisture/{self.thing_name}/data",
-        }

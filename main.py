@@ -6,12 +6,26 @@ Orchestrates the soil moisture monitoring using CounterFit sensors
 import time
 from counterfit_api import CounterFitAPI
 from soil_sensor import SoilMoistureSensor
+from aws_integration import AWSIoTConnection
+from config import AWS_CONFIG
 
 
 def main():
     """Main application function"""
     print("=== Soil Moisture Monitoring System ===")
     print("Initializing system...")
+    
+    # Initialize AWS IoT connection
+    aws_region = AWS_CONFIG["region"]
+    thing_name = AWS_CONFIG["thing_name"]
+    
+    print("Connecting to AWS IoT Core...")
+    try:
+        aws_iot = AWSIoTConnection(aws_region, thing_name)
+        print("✓ AWS IoT Core connection initialized")
+    except Exception as e:
+        print(f"✗ Failed to initialize AWS IoT connection: {e}")
+        return
     
     # Initialize the CounterFit API
     api = CounterFitAPI()
@@ -61,6 +75,21 @@ def main():
                     
                     if moisture_raw is not None:
                         print(f"{sensor.name} (pin {sensor.pin}): {moisture_raw}")
+                        
+                        # Prepare sensor data for AWS IoT
+                        sensor_data = {
+                            'sensor_name': sensor.name,
+                            'pin': sensor.pin,
+                            'moisture_value': moisture_raw,
+                            'location': 'garden'  # You can customize this
+                        }
+                        
+                        # Send data to AWS IoT Core
+                        if aws_iot.send_sensor_data(sensor_data):
+                            print(f"✓ Data sent to AWS IoT Core for {sensor.name}")
+                        else:
+                            print(f"✗ Failed to send data to AWS IoT Core for {sensor.name}")
+                            
                     else:
                         print(f"{sensor.name} (pin {sensor.pin}): ERROR - Could not read value")
                         
