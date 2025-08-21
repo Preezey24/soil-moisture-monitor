@@ -6,7 +6,7 @@ Orchestrates the soil moisture monitoring using CounterFit sensors
 import time
 from counterfit_api import CounterFitAPI
 from soil_sensor import SoilMoistureSensor
-from aws_integration import AWSIoTConnection
+from aws_integration import IoTService
 from config import AWS_CONFIG
 
 
@@ -19,12 +19,12 @@ def main():
     aws_region = AWS_CONFIG["region"]
     thing_name = AWS_CONFIG["thing_name"]
     
-    print("Connecting to AWS IoT Core...")
+    print("Connecting to AWS IoT Core (CloudWatch routing via IoT Rules)...")
     try:
-        aws_iot = AWSIoTConnection(aws_region, thing_name)
+        aws_iot = IoTService(aws_region, thing_name)
         print("✓ AWS IoT Core connection initialized")
     except Exception as e:
-        print(f"✗ Failed to initialize AWS IoT connection: {e}")
+        print(f"✗ Failed to initialize AWS connections: {e}")
         return
     
     # Initialize the CounterFit API
@@ -67,6 +67,9 @@ def main():
         while True:
             print(f"=== Reading at {time.strftime('%Y-%m-%d %H:%M:%S')} ===")
             
+            # Collect data from all sensors
+            sensor_readings = []
+            
             # Read from all sensors
             for sensor in sensors:
                 try:
@@ -76,7 +79,7 @@ def main():
                     if moisture_raw is not None:
                         print(f"{sensor.name} (pin {sensor.pin}): {moisture_raw}")
                         
-                        # Prepare sensor data for AWS IoT
+                        # Prepare sensor data
                         sensor_data = {
                             'sensor_name': sensor.name,
                             'pin': sensor.pin,
@@ -84,18 +87,21 @@ def main():
                             'location': 'garden'  # You can customize this
                         }
                         
-                        # Send data to AWS IoT Core
-                        if aws_iot.send_sensor_data(sensor_data):
-                            print(f"✓ Data sent to AWS IoT Core for {sensor.name}")
-                        else:
-                            print(f"✗ Failed to send data to AWS IoT Core for {sensor.name}")
-                            
+                        sensor_readings.append(sensor_data)
+                        
                     else:
                         print(f"{sensor.name} (pin {sensor.pin}): ERROR - Could not read value")
                         
                 except Exception as e:
                     print(f"Error reading from {sensor.name}: {e}")
             
+            # Send all sensor data in batch to IoT Core
+            if sensor_readings:
+                if aws_iot.send_multiple_sensor_data(sensor_readings):
+                    print(f"✓ Batch data sent to IoT Service for {len(sensor_readings)} sensors")
+                else:
+                    print(f"✗ Failed to send batch data to IoT Service")
+
             print("-" * 50)  # Separator line
             time.sleep(10)  # Wait 10 seconds before next reading
             

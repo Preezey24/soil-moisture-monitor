@@ -1,24 +1,25 @@
 """
-Simple AWS IoT Core Connection Module
-Handles basic connection and data transmission to AWS IoT Core
+IoT-Only AWS Integration Module
+Handles AWS IoT Core connection with rules-based CloudWatch routing
 """
 
 import json
 import boto3
 from datetime import datetime, timezone
-from typing import Dict
+from typing import Dict, List
 import logging
 from botocore.exceptions import NoCredentialsError
+from config import AWS_CONFIG
 
 
-class AWSIoTConnection:
+class IoTService:
     """
-    Simple AWS IoT Core connection class for soil moisture data
+    Simplified AWS IoT service class for soil moisture data
     """
 
     def __init__(self, region_name: str, thing_name: str):
         """
-        Initialize AWS IoT Core connection
+        Initialize AWS IoT Core
 
         Args:
             region_name (str): AWS region (e.g., 'us-east-1', 'us-west-2')
@@ -31,13 +32,13 @@ class AWSIoTConnection:
         logging.basicConfig(level=logging.INFO)
         self.logger = logging.getLogger(__name__)
 
-        # Initialize AWS IoT client
+        # Initialize IoT client only
         self._init_iot_client()
 
     def _init_iot_client(self):
-        """Initialize single AWS IoT client"""
+        """Initialize AWS IoT client"""
         try:
-            # Single IoT client for all interactions
+            # IoT client for device communication
             self.iot_client = boto3.client("iot-data", region_name=self.region_name)
 
             self.logger.info(
@@ -53,7 +54,7 @@ class AWSIoTConnection:
 
     def send_sensor_data(self, sensor_data: Dict) -> bool:
         """
-        Send sensor data to AWS IoT Core
+        Send sensor data to IoT Core
 
         Args:
             sensor_data (dict): Dictionary containing sensor data
@@ -68,17 +69,17 @@ class AWSIoTConnection:
             bool: True if successful, False otherwise
         """
         try:
-            # Create payload with timestamp and device info
+            # Create IoT payload with sensor data
+            # IoT Rules will extract the necessary fields for CloudWatch
             payload = {
                 "device_id": self.thing_name,
                 "timestamp": datetime.now(timezone.utc).isoformat(),
-                "data": sensor_data,
+                "sensor_data": sensor_data
             }
 
             # Define IoT Core topic
-            topic = f"soil-moisture/{self.thing_name}/data"
-
-            # Publish to IoT Core
+            topic = AWS_CONFIG["topic"]
+            
             response = self.iot_client.publish(
                 topic=topic,
                 qos=1,  # At least once delivery
@@ -89,5 +90,40 @@ class AWSIoTConnection:
             return True
 
         except Exception as e:
-            self.logger.error(f"Failed to send sensor data: {e}")
+            self.logger.error(f"Failed to send sensor data to IoT Core: {e}")
+            return False
+
+    def send_multiple_sensor_data(self, sensor_data_list: List[Dict]) -> bool:
+        """
+        Send multiple sensor readings to IoT Core in efficient batches
+        
+        Args:
+            sensor_data_list (List[Dict]): List of sensor data dictionaries
+            
+        Returns:
+            bool: True if all successful, False otherwise
+        """
+        try:
+            # Create a single batch payload with all sensor readings
+            batch_payload = {
+                "device_id": self.thing_name,
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "batch_sensor_data": sensor_data_list,
+                "sensor_count": len(sensor_data_list)
+            }
+
+            # Send batch to IoT Core
+            topic = AWS_CONFIG["topic"]
+            
+            response = self.iot_client.publish(
+                topic=topic,
+                qos=1,
+                payload=json.dumps(batch_payload),
+            )
+
+            self.logger.info(f"Batch of {len(sensor_data_list)} sensor readings sent to IoT Core")
+            return True
+
+        except Exception as e:
+            self.logger.error(f"Failed to send batch sensor data to IoT Core: {e}")
             return False
