@@ -1,0 +1,132 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'IoT Rules + CloudWatch Dashboard for Soil Moisture Monitoring (IoT-only integration)'
+
+Parameters:
+  DashboardName:
+    Type: String
+    Default: 'SoilMoistureDashboard'
+    Description: 'Name for the CloudWatch dashboard'
+  
+  IoTTopicName:
+    Type: String
+    Default: 'soil-moisture/data'
+    Description: 'IoT topic where sensor data is published'
+  
+  AWSRegion:
+    Type: String
+    Default: 'us-east-1'
+    Description: 'AWS Region where metrics are published'
+    AllowedValues:
+      - us-east-1
+      - us-west-2
+      - eu-west-1
+      - eu-central-1
+      - ap-southeast-1
+      - ap-southeast-2
+
+Resources:
+  # IAM Role for IoT Rule to write to CloudWatch
+  IoTCloudWatchRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${AWS::StackName}-IoTCloudWatchRole'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: iot.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: CloudWatchMetricsPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - cloudwatch:PutMetricData
+                Resource: '*'
+
+  # IoT Rule to route batch sensor readings to CloudWatch
+  SoilMoistureBatchRule:
+    Type: AWS::IoT::TopicRule
+    Properties:
+      RuleName: !Sub '${AWS::StackName}-BatchSensorRule'
+      TopicRulePayload:
+        Description: 'Route batch soil moisture sensor data to CloudWatch metrics'
+        Sql: !Sub |
+          SELECT 
+            sensor.moisture_value as metricValue,
+            sensor.sensor_name as sensorName,
+            sensor.pin as pin,
+            sensor.location as location,
+            timestamp() as metricTimestamp
+          FROM '${IoTTopicName}' as t,
+          t.batch_sensor_data[*] as sensor
+          WHERE sensor.moisture_value IS NOT NULL
+        Actions:
+          - CloudwatchMetric:
+              RoleArn: !GetAtt IoTCloudWatchRole.Arn
+              MetricNamespace: 'IoT/SoilMoisture'
+              MetricName: 'SoilMoisture'
+              MetricValue: '${metricValue}'
+              MetricUnit: 'None'
+              MetricTimestamp: '${metricTimestamp}'
+        RuleDisabled: false
+  # CloudWatch Dashboard
+  SoilMoistureDashboard:
+    Type: AWS::CloudWatch::Dashboard
+    Properties:
+      DashboardName: !Ref DashboardName
+      DashboardBody: !Sub |
+        {
+          "widgets": [
+            {
+              "type": "metric",
+              "x": 0,
+              "y": 0,
+              "width": 12,
+              "height": 6,
+              "properties": {
+                "metrics": [
+                  ["IoT/SoilMoisture", "SoilMoisture", "SensorName", "sensor_1"],
+                  [".", ".", ".", "sensor_2"],
+                  [".", ".", ".", "sensor_3"]
+                ],
+                "period": 60,
+                "stat": "Average",
+                "region": "${AWSRegion}",
+                "title": "Soil Moisture Levels - All Sensors (IoT Rules Routing)",
+                "yAxis": {
+                  "left": {
+                    "min": 0,
+                    "max": 1023
+                  }
+                },
+                "view": "timeSeries",
+                "stacked": false
+              }
+            }
+          ]
+        }
+
+Outputs:
+  IoTBatchRuleArn:
+    Description: 'ARN of the IoT Rule routing batch sensor data to CloudWatch'
+    Value: !GetAtt SoilMoistureBatchRule.Arn
+    
+  CloudWatchRoleArn:
+    Description: 'ARN of the IAM role used by IoT to write to CloudWatch'
+    Value: !GetAtt IoTCloudWatchRole.Arn
+    
+  DashboardURL:
+    Description: 'URL to access the CloudWatch dashboard'
+    Value: !Sub 'https://${AWSRegion}.console.aws.amazon.com/cloudwatch/home?region=${AWSRegion}#dashboards:name=${DashboardName}'
+    Export:
+      Name: !Sub '${AWS::StackName}-DashboardURL'
+  
+  DashboardName:
+    Description: 'Name of the created dashboard'
+    Value: !Ref DashboardName
+    Export:
+      Name: !Sub '${AWS::StackName}-DashboardName'
