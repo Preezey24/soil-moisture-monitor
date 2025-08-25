@@ -29,7 +29,7 @@ Resources:
   IoTCloudWatchRole:
     Type: AWS::IAM::Role
     Properties:
-      RoleName: !Sub '${AWS::StackName}-IoTCloudWatchRole'
+      RoleName: 'SoilMoisture_IoTCloudWatchRole'
       AssumeRolePolicyDocument:
         Version: '2012-10-17'
         Statement:
@@ -47,23 +47,22 @@ Resources:
                   - cloudwatch:PutMetricData
                 Resource: '*'
 
-  # IoT Rule to route batch sensor readings to CloudWatch
-  SoilMoistureBatchRule:
+  # IoT Rules to route batch sensor readings to CloudWatch (one rule per sensor)
+  SoilMoistureSensor1Rule:
     Type: AWS::IoT::TopicRule
     Properties:
-      RuleName: !Sub '${AWS::StackName}-BatchSensorRule'
+      RuleName: 'SoilMoisture_Sensor1_Rule'
       TopicRulePayload:
-        Description: 'Route batch soil moisture sensor data to CloudWatch metrics'
+        Description: 'Route sensor 1 data to CloudWatch metrics'
         Sql: !Sub |
           SELECT 
-            sensor.moisture_value as metricValue,
-            sensor.sensor_name as sensorName,
-            sensor.pin as pin,
-            sensor.location as location,
+            get(batch_sensor_data, 0).moisture_value as metricValue,
+            get(batch_sensor_data, 0).sensor_name as sensorName,
+            get(batch_sensor_data, 0).pin as pin,
+            get(batch_sensor_data, 0).location as location,
             timestamp() as metricTimestamp
-          FROM '${IoTTopicName}' as t,
-          t.batch_sensor_data[*] as sensor
-          WHERE sensor.moisture_value IS NOT NULL
+          FROM '${IoTTopicName}'
+          WHERE get(batch_sensor_data, 0).moisture_value IS NOT NULL
         Actions:
           - CloudwatchMetric:
               RoleArn: !GetAtt IoTCloudWatchRole.Arn
@@ -72,6 +71,62 @@ Resources:
               MetricValue: '${metricValue}'
               MetricUnit: 'None'
               MetricTimestamp: '${metricTimestamp}'
+              MetricDimensions:
+                SensorName: '${sensorName}'
+        RuleDisabled: false
+
+  SoilMoistureSensor2Rule:
+    Type: AWS::IoT::TopicRule
+    Properties:
+      RuleName: 'SoilMoisture_Sensor2_Rule'
+      TopicRulePayload:
+        Description: 'Route sensor 2 data to CloudWatch metrics'
+        Sql: !Sub |
+          SELECT 
+            get(batch_sensor_data, 1).moisture_value as metricValue,
+            get(batch_sensor_data, 1).sensor_name as sensorName,
+            get(batch_sensor_data, 1).pin as pin,
+            get(batch_sensor_data, 1).location as location,
+            timestamp() as metricTimestamp
+          FROM '${IoTTopicName}'
+          WHERE get(batch_sensor_data, 1).moisture_value IS NOT NULL
+        Actions:
+          - CloudwatchMetric:
+              RoleArn: !GetAtt IoTCloudWatchRole.Arn
+              MetricNamespace: 'IoT/SoilMoisture'
+              MetricName: 'SoilMoisture'
+              MetricValue: '${metricValue}'
+              MetricUnit: 'None'
+              MetricTimestamp: '${metricTimestamp}'
+              MetricDimensions:
+                SensorName: '${sensorName}'
+        RuleDisabled: false
+
+  SoilMoistureSensor3Rule:
+    Type: AWS::IoT::TopicRule
+    Properties:
+      RuleName: 'SoilMoisture_Sensor3_Rule'
+      TopicRulePayload:
+        Description: 'Route sensor 3 data to CloudWatch metrics'
+        Sql: !Sub |
+          SELECT 
+            get(batch_sensor_data, 2).moisture_value as metricValue,
+            get(batch_sensor_data, 2).sensor_name as sensorName,
+            get(batch_sensor_data, 2).pin as pin,
+            get(batch_sensor_data, 2).location as location,
+            timestamp() as metricTimestamp
+          FROM '${IoTTopicName}'
+          WHERE get(batch_sensor_data, 2).moisture_value IS NOT NULL
+        Actions:
+          - CloudwatchMetric:
+              RoleArn: !GetAtt IoTCloudWatchRole.Arn
+              MetricNamespace: 'IoT/SoilMoisture'
+              MetricName: 'SoilMoisture'
+              MetricValue: '${metricValue}'
+              MetricUnit: 'None'
+              MetricTimestamp: '${metricTimestamp}'
+              MetricDimensions:
+                SensorName: '${sensorName}'
         RuleDisabled: false
   # CloudWatch Dashboard
   SoilMoistureDashboard:
@@ -111,9 +166,17 @@ Resources:
         }
 
 Outputs:
-  IoTBatchRuleArn:
-    Description: 'ARN of the IoT Rule routing batch sensor data to CloudWatch'
-    Value: !GetAtt SoilMoistureBatchRule.Arn
+  IoTSensor1RuleArn:
+    Description: 'ARN of the IoT Rule routing sensor 1 data to CloudWatch'
+    Value: !GetAtt SoilMoistureSensor1Rule.Arn
+    
+  IoTSensor2RuleArn:
+    Description: 'ARN of the IoT Rule routing sensor 2 data to CloudWatch'
+    Value: !GetAtt SoilMoistureSensor2Rule.Arn
+    
+  IoTSensor3RuleArn:
+    Description: 'ARN of the IoT Rule routing sensor 3 data to CloudWatch'
+    Value: !GetAtt SoilMoistureSensor3Rule.Arn
     
   CloudWatchRoleArn:
     Description: 'ARN of the IAM role used by IoT to write to CloudWatch'

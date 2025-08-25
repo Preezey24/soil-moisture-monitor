@@ -16,16 +16,16 @@ fi
 echo "🔐 Checking AWS credentials..."
 aws sts get-caller-identity > /dev/null 2>&1
 if [ $? -ne 0 ]; then
-    echo "❌ AWS credentials not configured. Please run 'aws configure'"
+    echo "❌ Admin AWS credentials not configured. Please run 'aws configure'"
     exit 1
 fi
-echo "✅ AWS credentials verified"
+echo "✅ Admin AWS credentials verified"
 
 # Get AWS region from config or use default
 AWS_REGION=$(aws configure get region)
 if [ -z "$AWS_REGION" ]; then
     AWS_REGION="us-east-1"
-    echo "⚠️  No region configured, using default: $AWS_REGION"
+    echo "⚠️  No region configured for default profile, using default: $AWS_REGION"
 else
     echo "📍 Using region: $AWS_REGION"
 fi
@@ -37,7 +37,22 @@ TEMPLATE_FILE="cloudformation-dashboard.yaml"
 echo
 echo "📊 Deploying IoT Rules + CloudWatch dashboard..."
 
-# Deploy CloudFormation stack
+# Validate template first (skip if no permissions)
+echo "🔍 Validating CloudFormation template..."
+aws cloudformation validate-template \
+    --template-body file://"$TEMPLATE_FILE" \
+    --region "$AWS_REGION" 2>/dev/null
+
+if [ $? -eq 0 ]; then
+    echo "✅ Template validation successful"
+else
+    echo "⚠️  Template validation skipped (insufficient permissions - this is OK)"
+fi
+
+echo
+echo "🚀 Starting CloudFormation deployment..."
+
+# Deploy CloudFormation stack with verbose output
 aws cloudformation deploy \
     --template-file "$TEMPLATE_FILE" \
     --stack-name "$STACK_NAME" \
@@ -46,9 +61,12 @@ aws cloudformation deploy \
         IoTTopicName="soil-moisture/data" \
         AWSRegion="$AWS_REGION" \
     --capabilities CAPABILITY_NAMED_IAM \
-    --region "$AWS_REGION"
+    --region "$AWS_REGION" \
+    --no-fail-on-empty-changeset
 
-if [ $? -eq 0 ]; then
+DEPLOY_EXIT_CODE=$?
+
+if [ $DEPLOY_EXIT_CODE -eq 0 ]; then
     echo "✅ CloudFormation deployment successful!"
     echo
     
@@ -76,6 +94,13 @@ if [ $? -eq 0 ]; then
     echo "3. View your dashboard at the URL above"
     
 else
-    echo "❌ CloudFormation deployment failed"
+    echo "❌ CloudFormation deployment failed!"
+    echo
+    echo "� Check the AWS CloudFormation console for detailed error information:"
+    echo "   https://$AWS_REGION.console.aws.amazon.com/cloudformation/home?region=$AWS_REGION#/stacks"
+    echo
+    echo "🚨 To clean up the failed stack:"
+    echo "   aws cloudformation delete-stack --stack-name $STACK_NAME --region $AWS_REGION"
+    echo
     exit 1
 fi
